@@ -22,7 +22,7 @@ if device == 'cuda':
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--envId', default="MountainCarContinuous-v0")
+parser.add_argument('--envId', default="LunarLanderContinuous-v2")
 parser.add_argument('--policy', default="Gaussian")
 parser.add_argument('--eval', type=bool, default=True)
 parser.add_argument('--gamma', type=float, default=0.99,help='discount factor')
@@ -32,12 +32,12 @@ parser.add_argument('--alpha', type=float, default=0.2, help='Temperature parame
 parser.add_argument('--test_episode',type=int,default=10)
 parser.add_argument('--automatic_entropy_tuning', type=bool, default=False,help='auto adjust alpha')
 parser.add_argument('--seed', type=int, default=1254895)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--num_steps', type=int, default=1000001,help="maximum number of steps")
-parser.add_argument('--hidden_size', type=int, default=128)
-parser.add_argument('--start_steps', type=int, default=1000)
+parser.add_argument('--hidden_size', type=int, default=256)
+parser.add_argument('--start_steps', type=int, default=2)
 parser.add_argument('--target_update_interval', type=int, default=1)
-parser.add_argument('--replay_size', type=int, default=10000)
+parser.add_argument('--replay_size', type=int, default=100000)
 parser.add_argument('--device', type=str, default=device)
 args = parser.parse_args()
 
@@ -64,9 +64,10 @@ agent = SAC(env.observation_space.shape[0], env.action_space, args)
 writer = SummaryWriter('runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.envId,
                                                              args.policy, "autotune" if args.automatic_entropy_tuning else ""))
 
-
 # Memory
 replay_memo = ReplayBuffer(args.replay_size,input_shape,n_actions.shape[0])
+
+loss_info=None
 
 # Training Loop
 total_numsteps = 0
@@ -99,13 +100,17 @@ while True:
                 writer.add_scalar('entropy_temprature/alpha', alpha, updates)
                 updates += 1
 
+                loss_info=[policy_loss,critic_2_loss]
+        # if action >= 2 or action <= -2 or episode_idx>=90:
+        #     print("action:", action)
+        #     print("state:", state)
+
         next_state, reward, done, _ = env.step(action) # Step
         episode_steps += 1
         total_numsteps += 1
         episode_reward += reward
 
         # Ignore the "done" signal if it comes from hitting the time horizon.
-        # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
         mask = 1 if episode_steps == env._max_episode_steps else float(not done)
 
         replay_memo.push(state, action, reward, next_state, mask) # Append transition to memory
@@ -117,7 +122,7 @@ while True:
 
     writer.add_scalar('reward/train', episode_reward, episode_idx)
     print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(episode_idx, total_numsteps, episode_steps, round(episode_reward, 2)))
-
+    print("Losses {}".format(loss_info))
     if episode_idx % 10 == 0 and args.eval is True:
         avg_reward = 0.
         episodes = args.test_episode
@@ -130,7 +135,6 @@ while True:
 
                 next_state, reward, done, _ = env.step(action)
                 episode_reward += reward
-
 
                 state = next_state
             avg_reward += episode_reward

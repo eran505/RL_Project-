@@ -81,11 +81,11 @@ class GaussianPolicy(nn.Module):
             self.action_scale = torch.tensor(1.)
             self.action_bias = torch.tensor(0.)
         else:
-            self.action_scale = torch.FloatTensor(
-                (action_space.high - action_space.low) / 2.)
-            self.action_bias = torch.FloatTensor(
-                (action_space.high + action_space.low) / 2.)
-
+            scale_a = (action_space.high - action_space.low) / 2.0
+            action_b = (action_space.high + action_space.low) / 2.0
+            self.action_scale = torch.FloatTensor(scale_a)
+            self.action_bias = torch.FloatTensor(action_b)
+        print("d")
     def forward(self, state):
         prob = self.fc1(state)
         prob = F.relu(prob)
@@ -110,9 +110,18 @@ class GaussianPolicy(nn.Module):
         action = y_t * self.action_scale + self.action_bias
         log_prob = normal.log_prob(x_t)
         # try pow(2) =  action <--> y_t
-        log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + self.action_bias)
+
+        tmp_val_t = 1 - y_t.pow(2) + self.reparam_noise
+
+        log_prob -= torch.log(self.action_scale * (tmp_val_t) + self.action_bias)
+
         log_prob = log_prob.sum(1, keepdim=True)
         mean = torch.tanh(mu) * self.action_scale + self.action_bias
+
+        tmp = torch.isfinite(log_prob)
+        if torch.any(~tmp) :
+            assert True
+
         return action, log_prob, mean
 
     def to(self, device):
